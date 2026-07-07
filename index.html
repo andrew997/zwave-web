@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZPC Interface</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --card: #0f3460;
+    --accent: #e94560;
+    --green: #4ecca3;
+    --yellow: #f0c040;
+    --red: #e94560;
+    --gray: #888;
+    --text: #eee;
+    --muted: #999;
+    --border: #2a2a4a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  h1 { font-size: 1.4rem; font-weight: 600; }
+  .status-badge {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .status-badge.connected { border-color: var(--green); color: var(--green); }
+  .status-badge.disconnected { border-color: var(--red); color: var(--red); }
+  .status-badge.connecting { border-color: var(--yellow); color: var(--yellow); }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .info-item label {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .info-item span {
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: monospace;
+  }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); }
+  button.primary:hover { background: #d63a52; }
+  button.danger { border-color: var(--red); color: var(--red); }
+  button.danger:hover { background: var(--red); color: #fff; }
+  button.success { border-color: var(--green); color: var(--green); }
+  button.success:hover { background: var(--green); color: #fff; }
+  button.small { padding: 4px 10px; font-size: 0.72rem; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-family: monospace;
+    font-size: 0.8rem;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover { background: rgba(255,255,255,0.02); }
+
+  .node-status {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+  .node-status.online { background: var(--green); }
+  .node-status.offline { background: var(--red); }
+  .node-status.unknown { background: var(--gray); }
+
+  .log-panel {
+    background: #0a0a1a;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    max-height: 240px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 0.72rem;
+    line-height: 1.6;
+  }
+  .log-entry { white-space: pre-wrap; word-break: break-all; }
+  .log-entry .topic { color: var(--green); }
+  .log-entry .payload { color: var(--muted); }
+  .log-entry.incoming { color: var(--text); }
+  .log-entry.outgoing { color: var(--yellow); }
+
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+
+  .empty-state {
+    text-align: center;
+    padding: 30px;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .remove-node-input {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .remove-node-input input {
+    font-family: monospace;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text);
+    width: 80px;
+  }
+  .remove-node-input input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .mode-indicator {
+    display: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin-top: 8px;
+    background: rgba(233, 69, 96, 0.15);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+  }
+  .mode-indicator.active { display: block; }
+
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab-btn {
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 8px 18px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    background: var(--bg);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-bottom: -1px;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    background: var(--surface);
+    color: var(--text);
+    border-bottom-color: var(--surface);
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  .dsk-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .dsk-input-row input {
+    font-family: monospace;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text);
+    flex: 1;
+    max-width: 320px;
+  }
+  .dsk-input-row input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .dsk-input-row select {
+    font-family: monospace;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .dsk-input-row select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .ss-table td {
+    font-size: 0.75rem;
+    word-break: break-all;
+  }
+
+  .confirm-dialog {
+    display: none;
+    padding: 12px;
+    border-radius: 6px;
+    margin-top: 8px;
+    background: rgba(78, 204, 163, 0.1);
+    border: 1px solid var(--green);
+    color: var(--green);
+    font-size: 0.8rem;
+  }
+  .confirm-dialog.active { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .confirm-dialog .info { flex: 1; min-width: 200px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1 id="mainTitle">ZPC Interface</h1>
+    <span id="connStatus" class="status-badge disconnected">Disconnected</span>
+  </header>
+
+  <!-- Network Info -->
+  <div class="card">
+    <h2>Network</h2>
+    <div class="info-grid">
+      <div class="info-item">
+        <label>Home ID</label>
+        <span id="homeId">--</span>
+      </div>
+      <div class="info-item">
+        <label>Nodes</label>
+        <span id="nodeCount">0</span>
+      </div>
+      <div class="info-item">
+        <label>Online</label>
+        <span id="onlineCount">0</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('nodes')">Nodes</button>
+    <button class="tab-btn" onclick="switchTab('smartstart')">SmartStart</button>
+    <button class="tab-btn" onclick="switchTab('setup')">Setup</button>
+  </div>
+
+  <!-- Nodes Tab -->
+  <div id="tab-nodes" class="tab-panel active">
+    <div class="card">
+      <h2>Node Management</h2>
+      <div class="actions">
+        <button id="btnAdd" class="success" onclick="addNode()">Add Node</button>
+        <button id="btnAbortAdd" class="danger" onclick="abortAdd()" disabled>Abort Add</button>
+        <button id="btnRemove" onclick="removeNode()">Remove Node</button>
+        <button id="btnAbortRemove" class="danger" onclick="abortRemove()" disabled>Abort Remove</button>
+        <button id="btnRefresh" onclick="refreshNodes()">Refresh List</button>
+        <button id="btnPingAll" onclick="pingAll()">Ping All</button>
+      </div>
+      <div class="remove-node-input">
+        <input type="number" id="failedNodeId" placeholder="Node ID" min="1" max="232">
+        <button class="danger" onclick="removeFailedNode()">Remove Failed Node</button>
+      </div>
+      <div id="modeIndicator" class="mode-indicator"></div>
+    </div>
+
+    <div class="card">
+      <h2>Commissioned Nodes</h2>
+      <div id="nodeTableWrap">
+        <div class="empty-state">No nodes discovered yet. Click "Refresh List" to load.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SmartStart Tab -->
+  <div id="tab-smartstart" class="tab-panel">
+    <div class="card">
+      <h2>SmartStart Provisioning</h2>
+      <p style="font-size:0.78rem; color:var(--muted); margin-bottom:10px;">
+        Add a DSK to the provisioning list. When the device powers on and primes, it will be included automatically.
+      </p>
+      <div class="dsk-input-row">
+        <input type="text" id="dskInput" placeholder="12345-67890-12345-67890-12345-67890-12345-67890" maxlength="47">
+        <select id="protocolSelect">
+          <option value="Z-Wave Long Range">Z-Wave Long Range</option>
+          <option value="Z-Wave">Z-Wave</option>
+        </select>
+        <button class="success" onclick="smartstartAdd()">Add DSK</button>
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button onclick="smartstartList()">Refresh List</button>
+        <button class="danger" onclick="smartstartClear()">Clear All</button>
+      </div>
+      <div id="ssConfirm" class="confirm-dialog">
+        <div class="info">
+          <strong>Device included!</strong> DSK starts with: <span id="confirmDSKPrefix"></span>
+        </div>
+        <button class="success" onclick="confirmSSInclusion(true)">Confirm</button>
+        <button class="danger" onclick="confirmSSInclusion(false)">Reject</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Provisioning List</h2>
+      <div id="ssTableWrap">
+        <div class="empty-state">No SmartStart entries. Click "Refresh List" to load.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Setup Tab -->
+  <div id="tab-setup" class="tab-panel">
+    <div class="card">
+      <h2>MQTT Broker</h2>
+      <div class="info-grid" style="margin-bottom:12px;">
+        <div class="info-item">
+          <label>Status</label>
+          <span id="mqttStatus">--</span>
+        </div>
+        <div class="info-item">
+          <label>Host</label>
+          <span id="mqttHostDisplay">--</span>
+        </div>
+        <div class="info-item">
+          <label>Port</label>
+          <span id="mqttPortDisplay">--</span>
+        </div>
+      </div>
+      <div class="dsk-input-row">
+        <input type="text" id="mqttHost" placeholder="localhost" style="max-width:180px;">
+        <input type="number" id="mqttPort" placeholder="1883" min="1" max="65535" style="max-width:80px;">
+        <button id="btnMqttReconnect" class="success" onclick="mqttReconnect()">Connect</button>
+        <button id="btnMqttDisconnect" class="danger" onclick="mqttDisconnect()">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Controller</h2>
+      <p style="font-size:0.78rem; color:var(--muted); margin-bottom:12px;">
+        Factory reset will erase all network data, remove all nodes, and generate a new Home ID. This cannot be undone.
+      </p>
+      <button class="danger" onclick="factoryReset()">Factory Reset NCP</button>
+    </div>
+  </div>
+
+  <!-- Activity Log -->
+  <div class="card">
+    <h2>Activity Log</h2>
+    <div id="logPanel" class="log-panel"></div>
+  </div>
+
+  <!-- S2 Inclusion Dialog -->
+  <div class="card" id="s2Dialog" style="display:none;">
+    <h2>S2 Inclusion - Grant Keys</h2>
+    <div class="info-grid" style="margin-bottom:12px;">
+      <div class="info-item">
+        <label>Requested Keys</label>
+        <span id="requestedKeys">--</span>
+      </div>
+      <div class="info-item">
+        <label>CSA</label>
+        <span id="requestedCSA">--</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="success" onclick="grantKeys(true)">Grant Keys</button>
+      <button class="danger" onclick="grantKeys(false)">Deny</button>
+    </div>
+  </div>
+
+  <div class="card" id="dskDialog" style="display:none;">
+    <h2>S2 Inclusion - Accept DSK</h2>
+    <div class="info-item" style="margin-bottom:12px;">
+      <label>DSK</label>
+      <span id="requestedDSK" style="font-size:0.9rem; word-break:break-all;">--</span>
+    </div>
+    <div class="actions">
+      <button class="success" onclick="acceptDSK(true)">Accept</button>
+      <button class="danger" onclick="acceptDSK(false)">Reject</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+let ws = null;
+let homeId = null;
+let nodeStatus = {};
+let nodeData = [];
+let basicValues = {};  // node_id -> current_value from BasicReport
+let pendingToggle = {};  // node_id -> true if waiting for ping before toggle
+let addMode = false;
+let removeMode = false;
+let currentRequestedKeys = 0;
+let currentRequestedCSA = false;
+let currentDSK = "";
+let smartstartData = [];
+let pendingConfirmDSK = "";
+let mqttConnected = false;
+let mqttHost = "localhost";
+let mqttPort = 1883;
+let displayHostname = "localhost";
+
+const MAX_LOG = 200;
+let logEntries = [];
+
+// Z-Wave device class name mappings
+const BASIC_DEVICE_CLASS = {
+  1: "Controller",
+  2: "Static Controller",
+  3: "End Node",
+  4: "Routing End Node",
+};
+
+const GENERIC_DEVICE_CLASS = {
+  1: "Remote Controller",
+  2: "Static Controller",
+  3: "AV Control Point",
+  4: "Display",
+  15: "Repeater End Node",
+  16: "Binary Switch",
+  17: "Multilevel Switch",
+  18: "Remote Switch",
+  23: "Entry Control",
+  24: "Sensors",
+  25: "Pulse Meter",
+  26: "Notification Sensor",
+  32: "Binary Sensor",
+  33: "Multilevel Sensor",
+  47: "Thermostat",
+  48: "Fan",
+  49: "Barriers",
+  51: "Schedule",
+  52: "Sensor Alarm",
+  64: "Entry Control",
+  65: "Manufacturer Specific",
+  72: "Energy Production",
+  73: "Sensor Binary",
+  74: "Sensor Multilevel",
+  80: "Window Covering",
+  255: "Non-Interoperable",
+};
+
+const SPECIFIC_DEVICE_CLASS = {
+  0: "Not Used",
+  1: "Simple / Routing",
+  2: "Advanced",
+  3: "Scene / Multiposition",
+  4: "Power Strip / Gateway",
+  5: "Class A Motor / Zoned Security",
+  6: "Class B Motor / Barrier",
+  7: "Class C Motor / Barrier Add-On",
+  8: "Fan Switch",
+  9: "Barrier Close Only",
+  10: "Smoke Sensor Advanced",
+  11: "Satellite Receiver V2",
+  12: "Doorbell",
+};
+
+function deviceClassName(type, code) {
+  const map = type === "basic" ? BASIC_DEVICE_CLASS :
+              type === "generic" ? GENERIC_DEVICE_CLASS :
+              SPECIFIC_DEVICE_CLASS;
+  return map[code] || `0x${code.toString(16).toUpperCase().padStart(2, "0")}`;
+}
+
+function formatDeviceClass(basic, generic, specific) {
+  const parts = [];
+  if (basic) parts.push(deviceClassName("basic", basic));
+  if (generic) parts.push(deviceClassName("generic", generic));
+  if (specific) parts.push(deviceClassName("specific", specific));
+  return parts.length ? parts.join(" / ") : "--";
+}
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3000);
+}
+
+function addLog(topic, payload, outgoing) {
+  const entry = { topic, payload, outgoing, ts: Date.now() };
+  logEntries.push(entry);
+  if (logEntries.length > MAX_LOG) logEntries.shift();
+  renderLog();
+}
+
+function renderLog() {
+  const panel = document.getElementById("logPanel");
+  const lines = logEntries.map(e => {
+    const cls = e.outgoing ? "outgoing" : "incoming";
+    const arrow = e.outgoing ? ">>>" : "<<<";
+    const p = typeof e.payload === "object" ? JSON.stringify(e.payload) : e.payload;
+    return `<div class="log-entry ${cls}">${arrow} <span class="topic">${e.topic}</span> <span class="payload">${p}</span></div>`;
+  });
+  panel.innerHTML = lines.join("");
+  panel.scrollTop = panel.scrollHeight;
+}
+
+function setConnectionStatus(status) {
+  const el = document.getElementById("connStatus");
+  el.className = "status-badge " + status;
+  el.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function wsConnect() {
+  setConnectionStatus("connecting");
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    setConnectionStatus("connected");
+    showToast("Connected to server");
+  };
+
+  ws.onclose = () => {
+    setConnectionStatus("disconnected");
+    showToast("Disconnected - reconnecting in 3s");
+    setTimeout(wsConnect, 3000);
+  };
+
+  ws.onerror = () => {
+    setConnectionStatus("disconnected");
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      handleMessage(msg);
+    } catch (e) {
+      console.error("Parse error:", e);
+    }
+  };
+}
+
+function wsSend(action, data) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const msg = { action, ...data };
+    ws.send(JSON.stringify(msg));
+    if (data.topic) {
+      addLog(data.topic, data.payload, true);
+    }
+  }
+}
+
+function handleMessage(msg) {
+  if (msg.type === "init") {
+    if (msg.home_id) {
+      homeId = msg.home_id;
+      document.getElementById("homeId").textContent = homeId;
+    }
+    if (msg.node_list) {
+      nodeData = msg.node_list;
+      renderNodes();
+    }
+    if (msg.node_status) {
+      nodeStatus = msg.node_status;
+      updateCounts();
+    }
+    if (msg.basic_values) {
+      basicValues = msg.basic_values;
+    }
+    if (msg.smartstart_list) {
+      smartstartData = msg.smartstart_list;
+      renderSmartstart();
+    }
+    if (msg.mqtt_connected !== undefined) {
+      mqttConnected = msg.mqtt_connected;
+      updateMqttUI();
+    }
+    if (msg.mqtt_host) {
+      mqttHost = msg.mqtt_host;
+      document.getElementById("mqttHost").value = mqttHost;
+      document.getElementById("mqttHostDisplay").textContent = mqttHost;
+    }
+    if (msg.mqtt_port) {
+      mqttPort = msg.mqtt_port;
+      document.getElementById("mqttPort").value = mqttPort;
+      document.getElementById("mqttPortDisplay").textContent = mqttPort;
+    }
+    if (msg.display_hostname) {
+      displayHostname = msg.display_hostname;
+      updateTitle();
+    }
+    return;
+  }
+
+  addLog(msg.topic, msg.payload, false);
+  const topic = msg.topic;
+  const payload = msg.payload;
+
+  // Home ID from discovery
+  if (topic.endsWith("Discovery/Report") && payload.home_id) {
+    homeId = payload.home_id;
+    document.getElementById("homeId").textContent = homeId;
+  }
+
+  // Node list
+  if (topic.endsWith("Network/Node/List/Report")) {
+    nodeData = Array.isArray(payload) ? payload : [];
+    // Clean up stale status and basic values for removed nodes
+    const activeIds = new Set(
+      nodeData.map(n => (n.node_information || {}).node_id).filter(Boolean)
+    );
+    for (const nid of Object.keys(nodeStatus)) {
+      if (!activeIds.has(Number(nid))) delete nodeStatus[nid];
+    }
+    for (const nid of Object.keys(basicValues)) {
+      if (!activeIds.has(Number(nid))) delete basicValues[nid];
+    }
+    renderNodes();
+    showToast(`Node list updated: ${nodeData.length} nodes`);
+  }
+
+  // Node status
+  if (topic.endsWith("Network/Status/Report") && payload.node_id !== undefined) {
+    nodeStatus[payload.node_id] = payload.status;
+    updateCounts();
+    updateNodeStatusInTable(payload.node_id, payload.status);
+  }
+
+  // Basic CC report – update toggle button state, then fire pending toggle
+  if (topic.endsWith("/Basic/Report/BasicReport")) {
+    const parts = topic.split("/");
+    try {
+      const nid = parseInt(parts[2], 16);
+      basicValues[nid] = payload.current_value ?? 0;
+      updateBasicButton(nid, basicValues[nid]);
+      // If there was a pending toggle, execute it now
+      if (pendingToggle[nid]) {
+        delete pendingToggle[nid];
+        const next = basicValues[nid] === 0 ? 0xFF : 0;
+        wsSend("basic_set", { node_id: nid, value: next });
+        basicValues[nid] = next;
+        updateBasicButton(nid, next);
+      }
+    } catch(e) {}
+  }
+
+  // Add node report
+  if (topic.endsWith("Network/Node/Add/Report")) {
+    addMode = false;
+    updateModeButtons();
+    if (payload.dsk) {
+      pendingConfirmDSK = payload.dsk;
+      const prefix = formatDSK(payload.dsk).substring(0, 5);
+      document.getElementById("confirmDSKPrefix").textContent = prefix;
+      document.getElementById("ssConfirm").classList.add("active");
+      switchTab("smartstart");
+    }
+    showToast(`Node added: ID ${payload.node_id}`);
+    refreshNodes();
+    smartstartList();
+  }
+
+  // Remove node report
+  if (topic.endsWith("Network/Node/Remove/Report")) {
+    removeMode = false;
+    updateModeButtons();
+    showToast(`Node removed: ID ${payload.node_id}`);
+    refreshNodes();
+  }
+
+  // Remove failed report
+  if (topic.endsWith("Network/Node/RemoveFailed/Report")) {
+    showToast(`Remove failed node ${payload.node_id}: ${payload.status}`);
+    refreshNodes();
+  }
+
+  // S2: Requested keys
+  if (topic.endsWith("Network/RequestedKeys/Report")) {
+    currentRequestedKeys = payload.Keys || 0;
+    currentRequestedCSA = payload.CSA || false;
+    document.getElementById("requestedKeys").textContent = "0x" + currentRequestedKeys.toString(16).toUpperCase();
+    document.getElementById("requestedCSA").textContent = currentRequestedCSA;
+    document.getElementById("s2Dialog").style.display = "block";
+    showToast("S2 inclusion: grant keys?");
+  }
+
+  // S2: Requested DSK
+  if (topic.endsWith("Network/RequestedDSK/Report")) {
+    currentDSK = payload.DSK || "";
+    document.getElementById("requestedDSK").textContent = currentDSK;
+    document.getElementById("dskDialog").style.display = "block";
+    showToast("S2 inclusion: accept DSK?");
+  }
+
+  // Abort reports
+  if (topic.endsWith("Network/Node/Add/Abort")) {
+    addMode = false;
+    updateModeButtons();
+    showToast("Add node aborted");
+  }
+  if (topic.endsWith("Network/Node/Remove/Abort")) {
+    removeMode = false;
+    updateModeButtons();
+    showToast("Remove node aborted");
+  }
+
+  // SmartStart list report
+  if (topic.endsWith("Network/SmartStart/List/Report")) {
+    if (payload.value && Array.isArray(payload.value)) {
+      smartstartData = payload.value;
+      renderSmartstart();
+      showToast(`SmartStart list updated: ${smartstartData.length} entries`);
+    }
+  }
+}
+
+function renderNodes() {
+  const wrap = document.getElementById("nodeTableWrap");
+  if (!nodeData.length) {
+    wrap.innerHTML = '<div class="empty-state">No nodes discovered yet.</div>';
+    updateCounts();
+    return;
+  }
+
+  let html = `<table>
+    <thead><tr>
+      <th>Status</th>
+      <th>Node ID</th>
+      <th>Device Class</th>
+      <th>Firmware</th>
+      <th>Actions</th>
+    </tr></thead><tbody>`;
+
+  for (const node of nodeData) {
+    const info = node.node_information || {};
+    const ver = node.version_report || {};
+    const nid = info.node_id || "?";
+    const status = nodeStatus[nid] || "unknown";
+    const basic = info.basic_device_class || "";
+    const generic = info.generic_device_class || "";
+    const specific = info.specific_device_class || "";
+    const devClass = formatDeviceClass(basic, generic, specific);
+    const fw = ver.firmware_0_version || ver.firmware_version || "--";
+
+    const bv = basicValues[nid];
+    const btnOn = bv !== undefined;
+    const btnLabel = btnOn ? (bv === 0 ? "OFF" : "ON") : "Basic";
+    const btnStyle = btnOn
+      ? (bv === 0 ? "background:#222; color:#fff; border-color:#444;" : "background:#16a34a; color:#fff; border-color:#16a34a;")
+      : "";
+
+    html += `<tr id="node-${nid}">
+      <td><span class="node-status ${status}"></span>${status}</td>
+      <td>${nid}</td>
+      <td>${devClass}</td>
+      <td>${fw}</td>
+      <td>
+        <button class="small" onclick="pingNode(${nid})">Ping</button>
+        <button class="small basic-toggle" id="basic-${nid}" style="${btnStyle}" onclick="toggleBasic(${nid})">${btnLabel}</button>
+      </td>
+    </tr>`;
+  }
+
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+  updateCounts();
+}
+
+function updateNodeStatusInTable(nodeId, status) {
+  const row = document.getElementById(`node-${nodeId}`);
+  if (row) {
+    const td = row.cells[0];
+    td.innerHTML = `<span class="node-status ${status}"></span>${status}`;
+  }
+}
+
+function toggleBasic(nid) {
+  const current = basicValues[nid];
+  if (current === undefined) {
+    // Unknown state — ping first, then toggle when report arrives
+    pendingToggle[nid] = true;
+    wsSend("ping_node", { node_id: nid });
+    return;
+  }
+  const next = current === 0 ? 0xFF : 0;
+  wsSend("basic_set", { node_id: nid, value: next });
+  basicValues[nid] = next;  // Optimistic update
+  updateBasicButton(nid, next);
+}
+
+function updateBasicButton(nid, value) {
+  const btn = document.getElementById(`basic-${nid}`);
+  if (!btn) return;
+  const isOn = value !== 0;
+  btn.textContent = isOn ? "ON" : "OFF";
+  btn.style.background = isOn ? "#16a34a" : "#222";
+  btn.style.color = "#fff";
+  btn.style.borderColor = isOn ? "#16a34a" : "#444";
+}
+
+function updateCounts() {
+  document.getElementById("nodeCount").textContent = nodeData.length;
+  const online = Object.values(nodeStatus).filter(s => s === "online").length;
+  document.getElementById("onlineCount").textContent = online;
+}
+
+function updateModeButtons() {
+  document.getElementById("btnAdd").disabled = addMode;
+  document.getElementById("btnAbortAdd").disabled = !addMode;
+  document.getElementById("btnRemove").disabled = removeMode;
+  document.getElementById("btnAbortRemove").disabled = !removeMode;
+
+  const indicator = document.getElementById("modeIndicator");
+  if (addMode) {
+    indicator.textContent = "Inclusion mode active - put your Z-Wave device into inclusion mode now.";
+    indicator.classList.add("active");
+  } else if (removeMode) {
+    indicator.textContent = "Exclusion mode active - put your Z-Wave device into exclusion mode now.";
+    indicator.classList.add("active");
+  } else {
+    indicator.classList.remove("active");
+  }
+}
+
+function addNode() {
+  addMode = true;
+  updateModeButtons();
+  wsSend("add_node");
+  showToast("Inclusion started - put device in inclusion mode");
+}
+
+function abortAdd() {
+  wsSend("abort_add");
+  addMode = false;
+  updateModeButtons();
+}
+
+function removeNode() {
+  removeMode = true;
+  updateModeButtons();
+  wsSend("remove_node");
+  showToast("Exclusion started - put device in exclusion mode");
+}
+
+function abortRemove() {
+  wsSend("abort_remove");
+  removeMode = false;
+  updateModeButtons();
+}
+
+function removeFailedNode() {
+  const input = document.getElementById("failedNodeId");
+  const nid = parseInt(input.value);
+  if (!nid || nid < 1 || nid > 232) {
+    showToast("Enter a valid node ID (1-232)");
+    return;
+  }
+  wsSend("remove_failed_node", { node_id: nid });
+  showToast(`Removing failed node ${nid}...`);
+  input.value = "";
+}
+
+function refreshNodes() {
+  wsSend("node_list");
+  showToast("Refreshing node list...");
+}
+
+function pingNode(nid) {
+  wsSend("ping_node", { node_id: nid });
+  showToast(`Pinging node ${nid}...`);
+}
+
+function pingAll() {
+  for (const node of nodeData) {
+    const info = node.node_information || {};
+    const nid = info.node_id;
+    if (nid) {
+      wsSend("ping_node", { node_id: nid });
+    }
+  }
+  showToast(`Pinging ${nodeData.length} node(s)...`);
+}
+
+function grantKeys(accept) {
+  wsSend("grant_keys", { accept, keys: currentRequestedKeys, csa: currentRequestedCSA });
+  document.getElementById("s2Dialog").style.display = "none";
+  showToast(accept ? "Keys granted" : "Keys denied");
+}
+
+function acceptDSK(accept) {
+  if (accept) {
+    wsSend("accept_dsk", { dsk: currentDSK });
+    showToast("DSK accepted");
+  } else {
+    showToast("DSK rejected - aborting inclusion");
+    wsSend("abort_add");
+    addMode = false;
+    updateModeButtons();
+  }
+  document.getElementById("dskDialog").style.display = "none";
+}
+
+function switchTab(name) {
+  document.querySelectorAll(".tab-btn").forEach((b, i) => {
+    b.classList.toggle("active", ["nodes", "smartstart", "setup"][i] === name);
+  });
+  document.querySelectorAll(".tab-panel").forEach(p => {
+    p.classList.toggle("active", p.id === `tab-${name}`);
+  });
+}
+
+function formatDSK(raw) {
+  if (!raw) return "";
+  const digits = raw.replace(/[^0-9]/g, "");
+  const groups = [];
+  for (let i = 0; i < digits.length && i < 40; i += 5) {
+    groups.push(digits.substring(i, i + 5));
+  }
+  return groups.join("-");
+}
+
+function smartstartAdd() {
+  const input = document.getElementById("dskInput");
+  let dsk = input.value.trim();
+  if (!dsk) {
+    showToast("Enter a DSK");
+    return;
+  }
+  dsk = formatDSK(dsk);
+  if (dsk.length < 47) {
+    showToast("DSK must be 40 digits (8 groups of 5)");
+    return;
+  }
+  const protocol = document.getElementById("protocolSelect").value;
+  wsSend("smartstart_add", { dsk, protocol });
+  showToast(`Added DSK ${dsk.substring(0, 5)}... to provisioning list`);
+  input.value = "";
+  smartstartList();
+}
+
+function smartstartRemove(dsk) {
+  wsSend("smartstart_remove", { dsk });
+  showToast(`Removed DSK ${dsk.substring(0, 5)}...`);
+  smartstartList();
+}
+
+function smartstartList() {
+  wsSend("smartstart_list");
+}
+
+function smartstartClear() {
+  wsSend("smartstart_clear");
+  showToast("SmartStart list cleared");
+  smartstartData = [];
+  renderSmartstart();
+}
+
+function renderSmartstart() {
+  const wrap = document.getElementById("ssTableWrap");
+  if (!smartstartData.length) {
+    wrap.innerHTML = '<div class="empty-state">No SmartStart entries.</div>';
+    return;
+  }
+  let html = `<table class="ss-table">
+    <thead><tr>
+      <th>DSK</th>
+      <th>Protocol</th>
+      <th></th>
+    </tr></thead><tbody>`;
+  for (const entry of smartstartData) {
+    const dsk = entry.DSK || "--";
+    const protos = entry.PreferredProtocols || [];
+    const proto = protos.length ? protos.join(", ") : "--";
+    html += `<tr>
+      <td>${dsk}</td>
+      <td>${proto}</td>
+      <td><button class="danger" style="padding:4px 8px; font-size:0.7rem;" onclick="smartstartRemove('${dsk}')">Remove</button></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+}
+
+function confirmSSInclusion(confirmed) {
+  document.getElementById("ssConfirm").classList.remove("active");
+  if (confirmed) {
+    showToast("Inclusion confirmed");
+  } else {
+    showToast("Inclusion rejected - removing node");
+    const nid = nodeData.find(n => {
+      const info = n.node_information || {};
+      const dsk = info.dsk || "";
+      return dsk === pendingConfirmDSK;
+    });
+    if (nid) {
+      const info = nid.node_information || {};
+      wsSend("remove_failed_node", { node_id: info.node_id });
+    }
+  }
+  pendingConfirmDSK = "";
+}
+
+function updateTitle() {
+  const title = `ZPC Interface - ${displayHostname}`;
+  document.getElementById("mainTitle").textContent = title;
+  document.title = title;
+}
+
+function updateMqttUI() {
+  document.getElementById("mqttStatus").textContent = mqttConnected ? "Connected" : "Disconnected";
+  document.getElementById("mqttStatus").style.color = mqttConnected ? "var(--green)" : "var(--red)";
+  document.getElementById("btnMqttReconnect").disabled = mqttConnected;
+  document.getElementById("btnMqttDisconnect").disabled = !mqttConnected;
+}
+
+function mqttReconnect() {
+  const host = document.getElementById("mqttHost").value.trim() || "localhost";
+  const port = parseInt(document.getElementById("mqttPort").value) || 1883;
+  mqttHost = host;
+  mqttPort = port;
+  wsSend("mqtt_reconnect", { mqtt_host: host, mqtt_port: port });
+  showToast(`Reconnecting to ${host}:${port}...`);
+}
+
+function mqttDisconnect() {
+  wsSend("mqtt_reconnect", { mqtt_host: "", mqtt_port: 0 });
+  mqttConnected = false;
+  updateMqttUI();
+  showToast("MQTT disconnected");
+}
+
+function factoryReset() {
+  if (!homeId) {
+    showToast("No network to reset");
+    return;
+  }
+  if (!confirm("WARNING: Factory reset will erase ALL network data and nodes. This cannot be undone.\n\nAre you sure?")) {
+    return;
+  }
+  wsSend("factory_reset");
+  showToast("Factory reset initiated...");
+}
+
+// Start
+wsConnect();
+</script>
+</body>
+</html>
