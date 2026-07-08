@@ -675,9 +675,11 @@ function handleMessage(msg) {
   const payload = msg.payload;
 
   // Home ID from discovery
-  if (topic.endsWith("Discovery/Report") && payload.home_id) {
-    homeId = payload.home_id;
-    document.getElementById("homeId").textContent = homeId;
+  if (topic.endsWith("Discovery/Report") || topic.endsWith("Network/FactoryReset/Report")) {
+    if (payload && payload.home_id) {
+      homeId = payload.home_id;
+      document.getElementById("homeId").textContent = homeId;
+    }
   }
 
   // Node list

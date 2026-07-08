@@ -1,3 +1,4 @@
+import threading
 import asyncio
 import json
 import logging
@@ -114,7 +115,7 @@ def broadcast_to_clients(message):
 
 def on_mqtt_message(client, userdata, msg):
     global home_id, node_list, node_status, smartstart_list, basic_values
-
+    
     topic = msg.topic
     payload = msg.payload.decode("utf-8", errors="replace")
     try:
@@ -124,93 +125,95 @@ def on_mqtt_message(client, userdata, msg):
 
     logger.debug(f"MQTT {topic}: {data}")
 
-    parts = topic.split("/")
-    if len(parts) >= 2 and parts[0] == "zpc" and parts[1] not in ("Discovery", "Network"):
-        if home_id is None:
-            home_id = parts[1]
-
-    if topic.endswith("Discovery/Report"):
-        if isinstance(data, dict) and "home_id" in data:
-            home_id = data["home_id"]
-            logger.info(f"Discovered home_id: {home_id}")
-
-    # Factory reset report — new home_id, clear all state
-    if topic.endswith("Network/FactoryReset/Report"):
-        if isinstance(data, dict):
-            old_home = home_id
-            home_id = data.get("home_id")
-            node_status.clear()
-            node_list.clear()
-            smartstart_list.clear()
-            basic_values.clear()
-            pinged_nodes.clear()
-            logger.info(f"Factory reset complete: {old_home} -> {home_id}")
-            # Re-discover
-            if mqtt_client:
-                mqtt_client.publish("zpc/Discovery", "{}")
-
-    if topic.endswith("Network/Node/List/Report"):
-        node_list = data if isinstance(data, list) else []
-        logger.info(f"Node list updated: {len(node_list)} nodes")
-        # Clean up stale entries for removed nodes
-        active_ids = {
-            (n.get("node_information") or {}).get("node_id")
-            for n in node_list
-        }
-        node_status = {nid: s for nid, s in node_status.items() if nid in active_ids}
-        basic_values = {nid: v for nid, v in basic_values.items() if nid in active_ids}
-
-    if topic.endswith("Network/Status/Report"):
-        if isinstance(data, dict) and "node_id" in data:
-            node_status[data["node_id"]] = data.get("status", "unknown")
-
-    if topic.endswith("Network/SmartStart/List/Report"):
-        if isinstance(data, dict) and "value" in data:
-            smartstart_list = data["value"] if isinstance(data["value"], list) else []
-            logger.info(f"SmartStart list updated: {len(smartstart_list)} entries")
-
-    # Track Basic CC value and synthesize status when a pinged node responds
-    if topic.endswith("/Basic/Report/BasicReport") and "/" in topic:
+    with state_lock:
         parts = topic.split("/")
-        try:
-            node_hex = parts[2]  # zpc/<home_id>/<node_id>/ep0/Basic/Report/BasicReport
-            node_id = int(node_hex, 16)
-            # Track current Basic value
+        if len(parts) >= 2 and parts[0] == "zpc" and parts[1] not in ("Discovery", "Network"):
+            if home_id is None:
+                home_id = parts[1]
+
+        if topic.endswith("Discovery/Report"):
+            if isinstance(data, dict) and "home_id" in data:
+                home_id = data["home_id"]
+                logger.info(f"Discovered home_id: {home_id}")
+
+        # Factory reset report — new home_id, clear all state
+        if topic.endswith("Network/FactoryReset/Report"):
             if isinstance(data, dict):
-                basic_values[node_id] = data.get("current_value", 0)
-            # Synthesize status report for pinged nodes
-            if node_id in pinged_nodes:
-                pinged_nodes.discard(node_id)
-            if node_status.get(node_id) != "online":
-                node_status[node_id] = "online"
-                status_msg = json.dumps({
-                    "topic": f"zpc/{home_id}/Network/Status/Report",
-                    "payload": {"node_id": node_id, "status": "online"},
-                })
-                broadcast_to_clients(status_msg)
-                logger.info(f"Synthesized status online for node {node_id} (BasicReport)")
-        except (IndexError, ValueError):
-            pass
+                old_home = home_id
+                home_id = data.get("home_id")
+                node_status.clear()
+                node_list.clear()
+                smartstart_list.clear()
+                basic_values.clear()
+                pinged_nodes.clear()
+                logger.info(f"Factory reset complete: {old_home} -> {home_id}")
+                # Re-discover
+                if mqtt_client:
+                    mqtt_client.publish("zpc/Discovery", "{}")
 
-    # Synthesize status when a node responds to Supervision (e.g., after BasicSet)
-    if topic.endswith("/Supervision/Report/SupervisionReport") and "/" in topic:
-        parts = topic.split("/")
-        try:
-            node_hex = parts[2]  # zpc/<home_id>/<node_id>/ep0/Supervision/Report/SupervisionReport
-            node_id = int(node_hex, 16)
-            # Node 1 is the controller itself — skip it
-            if node_id == 1:
+        if topic.endswith("Network/Node/List/Report"):
+            node_list = data if isinstance(data, list) else []
+            logger.info(f"Node list updated: {len(node_list)} nodes")
+            # Clean up stale entries for removed nodes
+            active_ids = {
+                (n.get("node_information") or {}).get("node_id")
+                for n in node_list
+            }
+            node_status = {nid: s for nid, s in node_status.items() if nid in active_ids}
+            basic_values = {nid: v for nid, v in basic_values.items() if nid in active_ids}
+
+        if topic.endswith("Network/Status/Report"):
+            if isinstance(data, dict) and "node_id" in data:
+                node_status[data["node_id"]] = data.get("status", "unknown")
+
+        if topic.endswith("Network/SmartStart/List/Report"):
+            if isinstance(data, dict) and "value" in data:
+                smartstart_list = data["value"] if isinstance(data["value"], list) else []
+                logger.info(f"SmartStart list updated: {len(smartstart_list)} entries")
+
+        # Track Basic CC value and synthesize status when a pinged node responds
+        if topic.endswith("/Basic/Report/BasicReport") and "/" in topic:
+            parts = topic.split("/")
+            try:
+                node_hex = parts[2]  # zpc/<home_id>/<node_id>/ep0/Basic/Report/BasicReport
+                node_id = int(node_hex, 16)
+                # Track current Basic value
+                if isinstance(data, dict):
+                    basic_values[node_id] = data.get("current_value", 0)
+                # Synthesize status report for pinged nodes
+                if node_id in pinged_nodes:
+                    pinged_nodes.discard(node_id)
+                if node_status.get(node_id) != "online":
+                    node_status[node_id] = "online"
+                    status_msg = json.dumps({
+                        "topic": f"zpc/{home_id}/Network/Status/Report",
+                        "payload": {"node_id": node_id, "status": "online"},
+                    })
+                    broadcast_to_clients(status_msg)
+                    logger.info(f"Synthesized status online for node {node_id} (BasicReport)")
+            except (IndexError, ValueError):
                 pass
-            elif node_status.get(node_id) != "online":
-                node_status[node_id] = "online"
-                status_msg = json.dumps({
-                    "topic": f"zpc/{home_id}/Network/Status/Report",
-                    "payload": {"node_id": node_id, "status": "online"},
-                })
-                broadcast_to_clients(status_msg)
-                logger.info(f"Synthesized status online for node {node_id} (SupervisionReport)")
-        except (IndexError, ValueError):
-            pass
+
+        # Synthesize status when a node responds to Supervision (e.g., after BasicSet)
+        if topic.endswith("/Supervision/Report/SupervisionReport") and "/" in topic:
+            parts = topic.split("/")
+            try:
+                node_hex = parts[2]  # zpc/<home_id>/<node_id>/ep0/Supervision/Report/SupervisionReport
+                node_id = int(node_hex, 16)
+                # Node 1 is the controller itself — skip it
+                if node_id == 1:
+                    pass
+                elif node_status.get(node_id) != "online":
+                    node_status[node_id] = "online"
+                    status_msg = json.dumps({
+                        "topic": f"zpc/{home_id}/Network/Status/Report",
+                        "payload": {"node_id": node_id, "status": "online"},
+                    })
+                    broadcast_to_clients(status_msg)
+                    logger.info(f"Synthesized status online for node {node_id} (SupervisionReport)")
+            except (IndexError, ValueError):
+                pass
+
 
     message = json.dumps({"topic": topic, "payload": data})
     broadcast_to_clients(message)
@@ -282,18 +285,19 @@ async def ws_handler(websocket):
     connected_clients.add(websocket)
     global home_id, mqtt_client, event_loop, MQTT_HOST, MQTT_PORT, node_status, node_list, smartstart_list, basic_values, pinged_nodes, display_hostname
     try:
-        init = {
-            "type": "init",
-            "home_id": home_id,
-            "node_list": node_list,
-            "node_status": node_status,
-            "basic_values": basic_values,
-            "smartstart_list": smartstart_list,
-            "mqtt_connected": mqtt_connected,
-            "mqtt_host": MQTT_HOST,
-            "mqtt_port": MQTT_PORT,
-            "display_hostname": display_hostname,
-        }
+        with state_lock:
+            init = {
+                "type": "init",
+                "home_id": home_id,
+                "node_list": node_list,
+                "node_status": node_status,
+                "basic_values": basic_values,
+                "smartstart_list": smartstart_list,
+                "mqtt_connected": mqtt_connected,
+                "mqtt_host": MQTT_HOST,
+                "mqtt_port": MQTT_PORT,
+                "display_hostname": display_hostname,
+            }
         await websocket.send(json.dumps(init))
         logger.info(f"WebSocket client connected ({len(connected_clients)} total)")
 
@@ -318,36 +322,50 @@ async def ws_handler(websocket):
                     mqtt_client.publish("zpc/Discovery", "{}")
 
             elif action == "node_list":
-                if mqtt_client and home_id:
-                    mqtt_client.publish(f"zpc/{home_id}/Network/Node/List", "{}")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/Network/Node/List", "{}")
 
             elif action == "add_node":
-                if mqtt_client and home_id:
-                    mqtt_client.publish(f"zpc/{home_id}/Network/Node/Add", "{}")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/Network/Node/Add", "{}")
 
             elif action == "remove_node":
-                if mqtt_client and home_id:
-                    mqtt_client.publish(f"zpc/{home_id}/Network/Node/Remove", "{}")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/Network/Node/Remove", "{}")
 
             elif action == "abort_add":
-                if mqtt_client and home_id:
-                    mqtt_client.publish(f"zpc/{home_id}/Network/Node/Add/Abort", "{}")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/Network/Node/Add/Abort", "{}")
 
             elif action == "abort_remove":
-                if mqtt_client and home_id:
-                    mqtt_client.publish(f"zpc/{home_id}/Network/Node/Remove/Abort", "{}")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/Network/Node/Remove/Abort", "{}")
 
             elif action == "remove_failed_node":
                 nid = data.get("node_id")
-                if mqtt_client and home_id and nid is not None:
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and nid is not None:
                     mqtt_client.publish(
-                        f"zpc/{home_id}/Network/Node/RemoveFailed",
+                        f"zpc/{hid}/Network/Node/RemoveFailed",
                         json.dumps({"node_id": nid}),
                     )
 
             elif action == "factory_reset":
-                if mqtt_client and home_id:
-                    mqtt_client.publish(f"zpc/{home_id}/Network/FactoryReset", "{}")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/Network/FactoryReset", "{}")
 
             elif action == "mqtt_reconnect":
                 new_host = data.get("mqtt_host")
@@ -373,27 +391,24 @@ async def ws_handler(websocket):
                     if mqtt_client:
                         mqtt_client.loop_stop()
                         mqtt_client.disconnect()
-                    home_id = None
-                    node_status.clear()
-                    node_list.clear()
-                    smartstart_list.clear()
-                    basic_values.clear()
-                    event_loop = asyncio.get_event_loop()
-                    mqtt_client = mqtt.Client(
-                        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                        client_id=MQTT_CLIENT_ID,
-                        protocol=mqtt.MQTTv5,
-                    )
-                    mqtt_client.on_connect = on_mqtt_connect
-                    mqtt_client.on_disconnect = on_mqtt_disconnect
-                    mqtt_client.on_message = on_mqtt_message
-                    mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
+                    with state_lock:
+                        home_id = None
+                        node_status.clear()
+                        node_list.clear()
+                        smartstart_list.clear()
+                        basic_values.clear()
+                    mqtt_client = create_mqtt_client()
+                    await asyncio.to_thread(mqtt_client.connect, MQTT_HOST, MQTT_PORT, 60)
                     mqtt_client.loop_start()
 
+
+
             elif action == "grant_keys":
-                if mqtt_client and home_id:
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
                     mqtt_client.publish(
-                        f"zpc/{home_id}/Network/GrantKeys",
+                        f"zpc/{hid}/Network/GrantKeys",
                         json.dumps({
                             "Accept": data.get("accept", True),
                             "Keys": data.get("keys", 0),
@@ -402,54 +417,68 @@ async def ws_handler(websocket):
                     )
 
             elif action == "accept_dsk":
-                if mqtt_client and home_id:
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
                     mqtt_client.publish(
-                        f"zpc/{home_id}/Network/DSK/Accept",
+                        f"zpc/{hid}/Network/DSK/Accept",
                         json.dumps({"dsk": data.get("dsk", "")}),
                     )
 
             elif action == "smartstart_list":
-                if mqtt_client and home_id:
-                    mqtt_client.publish(f"zpc/{home_id}/Network/SmartStart/List", "{}")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/Network/SmartStart/List", "{}")
 
             elif action == "smartstart_add":
-                if mqtt_client and home_id:
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
                     dsk = data.get("dsk", "")
                     protocol = data.get("protocol", "Z-Wave Long Range")
                     payload = {"value": [{"DSK": dsk, "PreferredProtocols": [protocol]}]}
                     mqtt_client.publish(
-                        f"zpc/{home_id}/Network/SmartStart/Add",
+                        f"zpc/{hid}/Network/SmartStart/Add",
                         json.dumps(payload),
                     )
 
             elif action == "smartstart_remove":
-                if mqtt_client and home_id:
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
                     dsk = data.get("dsk", "")
                     payload = {"value": [{"DSK": dsk}]}
                     mqtt_client.publish(
-                        f"zpc/{home_id}/Network/SmartStart/Remove",
+                        f"zpc/{hid}/Network/SmartStart/Remove",
                         json.dumps(payload),
                     )
 
             elif action == "smartstart_clear":
-                if mqtt_client and home_id:
-                    mqtt_client.publish(f"zpc/{home_id}/Network/SmartStart/Clear", "{}")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/Network/SmartStart/Clear", "{}")
 
             elif action == "ping_node":
                 nid = data.get("node_id")
-                if mqtt_client and home_id and nid is not None:
-                    pinged_nodes.add(nid)
+                with state_lock:
+                    hid = home_id
+                    pinged_nodes.add(nid) if nid is not None else None
+                if mqtt_client and hid and nid is not None:
                     mqtt_client.publish(
-                        f"zpc/{home_id}/{nid:04X}/ep0/Basic/Command/BasicGet",
+                        f"zpc/{hid}/{nid:04X}/ep0/Basic/Command/BasicGet",
                         "{}",
                     )
 
             elif action == "basic_set":
                 nid = data.get("node_id")
                 value = data.get("value", 0)
-                if mqtt_client and home_id and nid is not None:
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and nid is not None:
                     mqtt_client.publish(
-                        f"zpc/{home_id}/{nid:04X}/ep0/Basic/Command/BasicSet",
+                        f"zpc/{hid}/{nid:04X}/ep0/Basic/Command/BasicSet",
                         json.dumps({"value": value}),
                     )
 
@@ -459,6 +488,17 @@ async def ws_handler(websocket):
         connected_clients.discard(websocket)
         logger.info(f"WebSocket client disconnected ({len(connected_clients)} remaining)")
 
+
+def create_mqtt_client():
+    client = mqtt.Client(
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        client_id=MQTT_CLIENT_ID,
+        protocol=mqtt.MQTTv5,
+    )
+    client.on_connect = on_mqtt_connect
+    client.on_disconnect = on_mqtt_disconnect
+    client.on_message = on_mqtt_message
+    return client
 
 def wait_for_mqtt(timeout=30):
     """Wait for MQTT broker to become available, with retries."""
@@ -515,17 +555,10 @@ async def run_server():
         return
 
     event_loop = asyncio.get_event_loop()
-
-    mqtt_client = mqtt.Client(
-        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-        client_id=MQTT_CLIENT_ID,
-        protocol=mqtt.MQTTv5,
-    )
-    mqtt_client.on_connect = on_mqtt_connect
-    mqtt_client.on_disconnect = on_mqtt_disconnect
-    mqtt_client.on_message = on_mqtt_message
+    mqtt_client = create_mqtt_client()
     mqtt_client.connect(MQTT_HOST, MQTT_PORT, 60)
     mqtt_client.loop_start()
+
 
     stop = event_loop.create_future()
 
