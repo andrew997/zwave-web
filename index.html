@@ -137,7 +137,7 @@
   }
   .node-status.online { background: var(--green); }
   .node-status.offline { background: var(--red); }
-  .node-status.unknown { background: var(--gray); }
+  .node-status.unknown { background: var(--yellow); }
 
   .log-panel {
     background: #0a0a1a;
@@ -293,6 +293,101 @@
   }
   .confirm-dialog.active { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .confirm-dialog .info { flex: 1; min-width: 200px; }
+
+  .protocol-badge {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(78, 204, 163, 0.15);
+    color: var(--green);
+    border: 1px solid rgba(78, 204, 163, 0.3);
+  }
+  .protocol-badge.lr {
+    background: rgba(240, 192, 64, 0.15);
+    color: var(--yellow);
+    border-color: rgba(240, 192, 64, 0.3);
+  }
+
+  .sec-badge {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .sec-badge.s2 { background: rgba(78, 204, 163, 0.15); color: var(--green); border: 1px solid rgba(78, 204, 163, 0.3); }
+  .sec-badge.s0 { background: rgba(240, 192, 64, 0.15); color: var(--yellow); border: 1px solid rgba(240, 192, 64, 0.3); }
+  .sec-badge.insecure { background: rgba(136, 136, 136, 0.15); color: var(--gray); border: 1px solid rgba(136, 136, 136, 0.3); }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    justify-content: center;
+    align-items: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .modal h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .modal .info-grid { margin-bottom: 12px; }
+  .modal .close-btn {
+    margin-top: 12px;
+    width: 100%;
+  }
+
+  .progress-bar {
+    width: 100%;
+    height: 20px;
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 8px 0;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--green);
+    transition: width 0.3s;
+  }
+
+  .ota-file-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .ota-file-row:last-child { border-bottom: none; }
+  .ota-file-name { flex: 1; font-family: monospace; font-size: 0.8rem; }
+  .ota-file-size { color: var(--muted); font-size: 0.75rem; min-width: 60px; text-align: right; }
+
+  .interview-badge {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(240, 192, 64, 0.15);
+    color: var(--yellow);
+    border: 1px solid rgba(240, 192, 64, 0.3);
+  }
+  .interview-badge.done {
+    background: rgba(78, 204, 163, 0.15);
+    color: var(--green);
+    border-color: rgba(78, 204, 163, 0.3);
+  }
 </style>
 </head>
 <body>
@@ -325,6 +420,7 @@
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('nodes')">Nodes</button>
     <button class="tab-btn" onclick="switchTab('smartstart')">SmartStart</button>
+    <button class="tab-btn" onclick="switchTab('ota')">OTA</button>
     <button class="tab-btn" onclick="switchTab('setup')">Setup</button>
   </div>
 
@@ -341,7 +437,7 @@
         <button id="btnPingAll" onclick="pingAll()">Ping All</button>
       </div>
       <div class="remove-node-input">
-        <input type="number" id="failedNodeId" placeholder="Node ID" min="1" max="232">
+        <input type="number" id="failedNodeId" placeholder="Node ID" min="1" max="4000">
         <button class="danger" onclick="removeFailedNode()">Remove Failed Node</button>
       </div>
       <div id="modeIndicator" class="mode-indicator"></div>
@@ -387,6 +483,73 @@
       <h2>Provisioning List</h2>
       <div id="ssTableWrap">
         <div class="empty-state">No SmartStart entries. Click "Refresh List" to load.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OTA Tab -->
+  <div id="tab-ota" class="tab-panel">
+    <div class="card">
+      <h2>Upload Image</h2>
+      <p style="font-size:0.78rem; color:var(--muted); margin-bottom:10px;">
+        Upload a .gbl firmware image to the ZPC cache, then start the update for a target node.
+      </p>
+      <div class="dsk-input-row">
+        <input type="file" id="otaFileInput" accept=".gbl" style="flex:1; max-width:300px; font-size:0.8rem;">
+        <button class="success" onclick="otaUploadFile()">Upload Image</button>
+      </div>
+      <div id="otaUploadStatus" style="margin-top:8px; font-size:0.78rem; color:var(--muted);"></div>
+    </div>
+
+    <div class="card">
+      <h2>Cached Images</h2>
+      <div class="actions" style="margin-bottom:8px;">
+        <button onclick="otaListImages()">Refresh List</button>
+      </div>
+      <div id="otaImageList">
+        <div class="empty-state">No cached images. Click "Refresh List" to load.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Start Firmware Update</h2>
+      <div class="dsk-input-row">
+        <label style="font-size:0.78rem; color:var(--muted); min-width:60px;">Node ID:</label>
+        <select id="otaNodeId" style="max-width:220px;">
+          <option value="">(no nodes commissioned)</option>
+        </select>
+        <label style="font-size:0.78rem; color:var(--muted); min-width:70px;">Image:</label>
+        <select id="otaImageSelect" style="flex:1; max-width:250px;">
+          <option value="">(upload an image first)</option>
+        </select>
+        <button class="success" onclick="otaStartUpload()">Start</button>
+      </div>
+    </div>
+
+    <div class="card" id="otaProgressCard" style="display:none;">
+      <h2>Update Progress</h2>
+      <div class="info-grid" style="margin-bottom:8px;">
+        <div class="info-item">
+          <label>Node</label>
+          <span id="otaProgressNode">--</span>
+        </div>
+        <div class="info-item">
+          <label>Status</label>
+          <span id="otaProgressStatus">--</span>
+        </div>
+        <div class="info-item">
+          <label>Percentage</label>
+          <span id="otaProgressPct">--</span>
+        </div>
+      </div>
+      <div class="progress-bar">
+        <div id="otaProgressBar" class="progress-bar-fill" style="width:0%"></div>
+      </div>
+      <div class="actions">
+        <button onclick="otaProgress()">Refresh</button>
+        <button class="danger" id="otaAbortBtn" onclick="otaAbort()">Abort</button>
+        <button class="success" id="otaActivateBtn" onclick="otaActivate()" style="display:none;">Activate</button>
+        <button onclick="closeOtaProgress()">Close</button>
       </div>
     </div>
   </div>
@@ -454,12 +617,64 @@
   <div class="card" id="dskDialog" style="display:none;">
     <h2>S2 Inclusion - Accept DSK</h2>
     <div class="info-item" style="margin-bottom:12px;">
-      <label>DSK</label>
+      <label>Reported DSK</label>
       <span id="requestedDSK" style="font-size:0.9rem; word-break:break-all;">--</span>
     </div>
-    <div class="actions">
+    <div class="dsk-input-row">
+      <label style="font-size:0.78rem; color:var(--muted); min-width:150px;">First 5 digits (from device):</label>
+      <input type="text" id="dskPrefixInput" placeholder="00000" maxlength="5" inputmode="numeric"
+             style="max-width:120px; letter-spacing:3px; text-align:center;">
+    </div>
+    <div class="actions" style="margin-top:8px;">
       <button class="success" onclick="acceptDSK(true)">Accept</button>
       <button class="danger" onclick="acceptDSK(false)">Reject</button>
+    </div>
+  </div>
+
+  <!-- Node Properties Modal -->
+  <div id="propsModal" class="modal-overlay">
+    <div class="modal">
+      <h2>Node Properties — <span id="propsNodeId">--</span></h2>
+      <div class="info-grid">
+        <div class="info-item">
+          <label>Protocol</label>
+          <span id="propsProtocol">--</span>
+        </div>
+        <div class="info-item">
+          <label>Granted Keys</label>
+          <span id="propsKeys">--</span>
+        </div>
+        <div class="info-item">
+          <label>S2 Capable</label>
+          <span id="propsS2Cap">--</span>
+        </div>
+        <div class="info-item">
+          <label>Last RX RSSI</label>
+          <span id="propsRssi">--</span>
+        </div>
+        <div class="info-item">
+          <label>Last TX Power</label>
+          <span id="propsTxPower">--</span>
+        </div>
+        <div class="info-item">
+          <label>Repeaters</label>
+          <span id="propsRepeaters">--</span>
+        </div>
+        <div class="info-item">
+          <label>Route Path</label>
+          <span id="propsRoute">--</span>
+        </div>
+        <div class="info-item">
+          <label>Last Activity</label>
+          <span id="propsLastActivity">--</span>
+        </div>
+      </div>
+      <div class="actions" style="margin-top:12px;">
+        <button class="success" id="propsNlsEnable" onclick="nlsEnableFromModal()">Enable NLS</button>
+        <button onclick="nlsStateFromModal()">Query NLS</button>
+      </div>
+      <div id="propsNlsResult" style="margin-top:8px; font-size:0.78rem; color:var(--muted);"></div>
+      <button class="close-btn" onclick="closePropsModal()">Close</button>
     </div>
   </div>
 </div>
@@ -468,6 +683,7 @@
 
 <script>
 let ws = null;
+let autoRefreshed = false;
 let homeId = null;
 let nodeStatus = {};
 let nodeData = [];
@@ -481,6 +697,13 @@ let currentDSK = "";
 let smartstartData = [];
 let pendingConfirmDSK = "";
 let mqttConnected = false;
+let nodeInterview = {};
+let nodeProperties = {};
+let otaImages = [];
+let otaProgressState = null;
+let otaProgressTimer = null;
+let otaAwaitingActivation = null;
+let modalNodeId = null;
 let mqttHost = "localhost";
 let mqttPort = 1883;
 let displayHostname = "localhost";
@@ -556,6 +779,17 @@ function formatDeviceClass(basic, generic, specific) {
   return parts.length ? parts.join(" / ") : "--";
 }
 
+// Formats "major.sub" from the version report's firmware_0_version /
+// firmware_0_sub_version fields (each an optional uint8, null when unknown).
+// Returns null when neither is available.
+function formatFirmware(major, sub) {
+  const has = (v) => v !== null && v !== undefined;
+  if (has(major) && has(sub)) return `${major}.${sub}`;
+  if (has(major)) return `${major}`;
+  if (has(sub)) return `${sub}`;
+  return null;
+}
+
 function showToast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg;
@@ -622,7 +856,7 @@ function wsSend(action, data) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     const msg = { action, ...data };
     ws.send(JSON.stringify(msg));
-    if (data.topic) {
+    if (data && data.topic) {
       addLog(data.topic, data.payload, true);
     }
   }
@@ -633,6 +867,7 @@ function handleMessage(msg) {
     if (msg.home_id) {
       homeId = msg.home_id;
       document.getElementById("homeId").textContent = homeId;
+      maybeAutoRefresh();
     }
     if (msg.node_list) {
       nodeData = msg.node_list;
@@ -679,6 +914,7 @@ function handleMessage(msg) {
     if (payload && payload.home_id) {
       homeId = payload.home_id;
       document.getElementById("homeId").textContent = homeId;
+      maybeAutoRefresh();
     }
   }
 
@@ -724,18 +960,28 @@ function handleMessage(msg) {
     } catch(e) {}
   }
 
-  // Add node report
+  // Add node report (success or failure)
   if (topic.endsWith("Network/Node/Add/Report")) {
     addMode = false;
     updateModeButtons();
-    if (payload.dsk) {
-      pendingConfirmDSK = payload.dsk;
-      const prefix = formatDSK(payload.dsk).substring(0, 5);
-      document.getElementById("confirmDSKPrefix").textContent = prefix;
-      document.getElementById("ssConfirm").classList.add("active");
-      switchTab("smartstart");
+    if (payload.status === "fail") {
+      const reason = payload.reason;
+      let msg = `Add node failed`;
+      if (reason === 6401) msg += ` (network management busy: ${payload.activity || "unknown"})`;
+      else if (reason === 6402) msg += ` (factory reset ongoing)`;
+      else if (reason === 6404) msg += ` (security bootstrapping failed)`;
+      else msg += ` (reason: ${reason})`;
+      showToast(msg);
+    } else {
+      if (payload.dsk) {
+        pendingConfirmDSK = payload.dsk;
+        const prefix = formatDSK(payload.dsk).substring(0, 5);
+        document.getElementById("confirmDSKPrefix").textContent = prefix;
+        document.getElementById("ssConfirm").classList.add("active");
+        switchTab("smartstart");
+      }
+      showToast(`Node added: ID ${payload.node_id}`);
     }
-    showToast(`Node added: ID ${payload.node_id}`);
     refreshNodes();
     smartstartList();
   }
@@ -754,9 +1000,13 @@ function handleMessage(msg) {
     refreshNodes();
   }
 
-  // S2: Requested keys
+  // S2: Requested keys. ZPC publishes Keys as a hex string ("0x2"), so parse
+  // it to a number — display and grant (ZPC accepts a number) both use it.
   if (topic.endsWith("Network/RequestedKeys/Report")) {
-    currentRequestedKeys = payload.Keys || 0;
+    const rawKeys = payload.Keys;
+    currentRequestedKeys = (typeof rawKeys === "number")
+      ? rawKeys
+      : (parseInt(rawKeys, 16) || 0);
     currentRequestedCSA = payload.CSA || false;
     document.getElementById("requestedKeys").textContent = "0x" + currentRequestedKeys.toString(16).toUpperCase();
     document.getElementById("requestedCSA").textContent = currentRequestedCSA;
@@ -767,9 +1017,15 @@ function handleMessage(msg) {
   // S2: Requested DSK
   if (topic.endsWith("Network/RequestedDSK/Report")) {
     currentDSK = payload.DSK || "";
-    document.getElementById("requestedDSK").textContent = currentDSK;
+    document.getElementById("requestedDSK").textContent = currentDSK || "--";
+    // Classic S2 inclusion: the user must confirm the DSK by typing the first
+    // 5 digits as shown on the physical device. Reset the field each time.
+    const dskPrefix = document.getElementById("dskPrefixInput");
+    dskPrefix.value = "";
+    dskPrefix.placeholder = "00000";
     document.getElementById("dskDialog").style.display = "block";
-    showToast("S2 inclusion: accept DSK?");
+    dskPrefix.focus();
+    showToast("S2 inclusion: type the first 5 DSK digits from the device");
   }
 
   // Abort reports
@@ -792,6 +1048,153 @@ function handleMessage(msg) {
       showToast(`SmartStart list updated: ${smartstartData.length} entries`);
     }
   }
+
+  // Remove node report — handle failure status
+  if (topic.endsWith("Network/Node/Remove/Report")) {
+    if (payload.status === "fail") {
+      const reason = payload.reason;
+      let msg = `Remove node failed`;
+      if (reason === 6401) msg += ` (network management busy: ${payload.activity || "unknown"})`;
+      else if (reason === 6402) msg += ` (factory reset ongoing)`;
+      else msg += ` (reason: ${reason})`;
+      showToast(msg);
+      removeMode = false;
+      updateModeButtons();
+    }
+  }
+
+  // Interview report
+  if (topic.endsWith("Interview/Report")) {
+    if (payload.node_id !== undefined) {
+      const key = `${payload.node_id}/${payload.endpoint_id || 0}`;
+      if (payload.status === 0) {
+        nodeInterview[key] = "done";
+      } else {
+        nodeInterview[key] = "failed";
+      }
+      showToast(`Interview ${payload.endpoint_id === 0 ? "root" : "ep" + payload.endpoint_id} complete for node ${payload.node_id}`);
+      renderNodes();
+      // OTA activation completion: after "Activate", ZPC publishes no success
+      // report — the node reboots and is re-interviewed. A successful root
+      // interview is the completion signal; refresh so the Firmware column
+      // shows the new version.
+      if (otaAwaitingActivation && payload.endpoint_id === 0 && payload.status === 0 &&
+          payload.node_id === otaAwaitingActivation.node_id) {
+        otaAwaitingActivation = null;
+        document.getElementById("otaProgressStatus").textContent = "Activation complete";
+        document.getElementById("otaProgressPct").textContent = "100%";
+        document.getElementById("otaProgressBar").style.width = "100%";
+        refreshNodes();
+        showToast(`OTA complete on node ${payload.node_id}`);
+      }
+    }
+  }
+
+  // Node Properties report
+  if (topic.endsWith("Network/Node/Properties/Report")) {
+    if (payload.node_id !== undefined) {
+      nodeProperties[payload.node_id] = payload;
+      if (modalNodeId === payload.node_id) {
+        renderPropsModal(payload);
+      }
+      showToast(`Properties loaded for node ${payload.node_id}`);
+    }
+  }
+
+  // NLS Enable report
+  if (topic.endsWith("Network/NLS/Enable/Report")) {
+    showToast(`NLS enable for node ${payload.node_id}: ${payload.status}`);
+    if (modalNodeId === payload.node_id) {
+      document.getElementById("propsNlsResult").textContent = `NLS enabled: ${payload.status}`;
+    }
+  }
+
+  // NLS State report
+  if (topic.endsWith("Network/NLS/State/Report")) {
+    if (modalNodeId === payload.node_id) {
+      const nlsSup = payload.nls_support ? "Yes" : "No";
+      const nlsSt = payload.nls_state ? "Enabled" : "Disabled";
+      document.getElementById("propsNlsResult").textContent = `NLS support: ${nlsSup}, State: ${nlsSt}`;
+    }
+  }
+
+  // OTA UploadImage report
+  if (topic.endsWith("OTA/UploadImage/Report")) {
+    const el = document.getElementById("otaUploadStatus");
+    if (payload.status === "ok") {
+      el.textContent = `Image "${payload.image_name}" uploaded successfully`;
+      el.style.color = "var(--green)";
+      otaListImages();
+    } else {
+      el.textContent = `Upload failed: ${payload.reason || payload.status}`;
+      el.style.color = "var(--red)";
+    }
+  }
+
+  // OTA ListImages report
+  if (topic.endsWith("OTA/ListImages/Report")) {
+    otaImages = payload.images || [];
+    renderOtaImages();
+  }
+
+  // OTA RemoveImage report
+  if (topic.endsWith("OTA/RemoveImage/Report")) {
+    showToast(`Remove image: ${payload.status}`);
+    otaListImages();
+  }
+
+  // OTA StartFirmwareUpload report
+  if (topic.endsWith("OTA/StartFirmwareUpload/Report")) {
+    if (payload.status === "accepted") {
+      showToast("Firmware upload started");
+      otaProgressState = { node_id: payload.node_id };
+      otaAwaitingActivation = null;
+      document.getElementById("otaProgressCard").style.display = "block";
+      document.getElementById("otaProgressNode").textContent = payload.node_id;
+      document.getElementById("otaProgressStatus").textContent = "Started";
+      document.getElementById("otaAbortBtn").style.display = "";
+      document.getElementById("otaActivateBtn").style.display = "none";
+      otaProgress();
+      startOtaProgressPolling();
+    } else {
+      // Only clear tracked state for the node this report is about, so a
+      // rejected start doesn't clobber a different node's in-progress transfer.
+      if (!otaProgressState || otaProgressState.node_id === payload.node_id) {
+        stopOtaProgressPolling();
+        otaProgressState = null;
+      }
+      showToast(`OTA start: ${payload.status} — ${payload.reason || ""}`);
+    }
+  }
+
+  // OTA Progress report
+  if (topic.endsWith("OTA/Progress/Report")) {
+    if (payload.percentage !== undefined) {
+      document.getElementById("otaProgressBar").style.width = payload.percentage + "%";
+      document.getElementById("otaProgressPct").textContent = payload.percentage + "%";
+    }
+    if (payload.status) {
+      document.getElementById("otaProgressStatus").textContent = otaStatusText(payload.status, payload.status_code);
+      if (OTA_TERMINAL_STATUSES.includes(payload.status)) {
+        stopOtaProgressPolling();
+        document.getElementById("otaAbortBtn").style.display = "none";
+        otaProgressState = null;
+        otaAwaitingActivation = null;
+      }
+      if (payload.status === "waiting_for_activation") {
+        document.getElementById("otaActivateBtn").style.display = "";
+        otaProgressState = { node_id: payload.node_id };
+      }
+    }
+    if (payload.node_id) {
+      document.getElementById("otaProgressNode").textContent = payload.node_id;
+    }
+  }
+
+  // OTA StartFirmwareUpload error report
+  if (topic.endsWith("OTA/StartFirmwareUpload/Report") && payload.status === "error") {
+    showToast(`OTA error: ${payload.reason || payload.status}`);
+  }
 }
 
 function renderNodes() {
@@ -799,6 +1202,7 @@ function renderNodes() {
   if (!nodeData.length) {
     wrap.innerHTML = '<div class="empty-state">No nodes discovered yet.</div>';
     updateCounts();
+    renderOtaNodeSelect();
     return;
   }
 
@@ -806,6 +1210,8 @@ function renderNodes() {
     <thead><tr>
       <th>Status</th>
       <th>Node ID</th>
+      <th>Protocol</th>
+      <th>Security</th>
       <th>Device Class</th>
       <th>Firmware</th>
       <th>Actions</th>
@@ -820,7 +1226,21 @@ function renderNodes() {
     const generic = info.generic_device_class || "";
     const specific = info.specific_device_class || "";
     const devClass = formatDeviceClass(basic, generic, specific);
-    const fw = ver.firmware_0_version || ver.firmware_version || "--";
+    const fw = formatFirmware(ver.firmware_0_version, ver.firmware_0_sub_version) ?? ver.firmware_version ?? "--";
+
+    const proto = info.inclusion_protocol === 1 ? "LR" : "ZW";
+    const protoCls = info.inclusion_protocol === 1 ? "lr" : "";
+    const keys = info.granted_keys || 0;
+    let secLabel = "Insecure";
+    let secCls = "insecure";
+    if (keys & 0x07) { secLabel = "S2"; secCls = "s2"; }
+    else if (keys & 0x80) { secLabel = "S0"; secCls = "s0"; }
+
+    const intKey = `${nid}/0`;
+    const intStatus = nodeInterview[intKey];
+    let intBadge = "";
+    if (intStatus === "done") intBadge = `<span class="interview-badge done">✓</span>`;
+    else if (intStatus === "failed") intBadge = `<span class="interview-badge">✗</span>`;
 
     const bv = basicValues[nid];
     const btnOn = bv !== undefined;
@@ -832,11 +1252,14 @@ function renderNodes() {
     html += `<tr id="node-${nid}">
       <td><span class="node-status ${status}"></span>${status}</td>
       <td>${nid}</td>
-      <td>${devClass}</td>
+      <td><span class="protocol-badge ${protoCls}">${proto}</span></td>
+      <td><span class="sec-badge ${secCls}">${secLabel}</span></td>
+      <td>${devClass} ${intBadge}</td>
       <td>${fw}</td>
       <td>
         <button class="small" onclick="pingNode(${nid})">Ping</button>
         <button class="small basic-toggle" id="basic-${nid}" style="${btnStyle}" onclick="toggleBasic(${nid})">${btnLabel}</button>
+        <button class="small" onclick="showProps(${nid})">Props</button>
       </td>
     </tr>`;
   }
@@ -844,6 +1267,7 @@ function renderNodes() {
   html += `</tbody></table>`;
   wrap.innerHTML = html;
   updateCounts();
+  renderOtaNodeSelect();
 }
 
 function updateNodeStatusInTable(nodeId, status) {
@@ -931,8 +1355,8 @@ function abortRemove() {
 function removeFailedNode() {
   const input = document.getElementById("failedNodeId");
   const nid = parseInt(input.value);
-  if (!nid || nid < 1 || nid > 232) {
-    showToast("Enter a valid node ID (1-232)");
+  if (!nid || nid < 1 || nid > 4000) {
+    showToast("Enter a valid node ID (1-4000)");
     return;
   }
   wsSend("remove_failed_node", { node_id: nid });
@@ -943,6 +1367,26 @@ function removeFailedNode() {
 function refreshNodes() {
   wsSend("node_list");
   showToast("Refreshing node list...");
+}
+
+// On the initial page load, request a fresh node list once the client has a
+// confirmed home_id (guarantees the server can route the request). This runs
+// the same code path as the "Refresh List" button, so a browser reload always
+// shows current data rather than the server's cached list.
+// Deferred with setTimeout: the call comes from inside the init handler, and
+// an error here (e.g. in wsSend) would otherwise abort the rest of the init
+// processing (status, display_hostname/title, etc.).
+function maybeAutoRefresh() {
+  if (!autoRefreshed && homeId) {
+    autoRefreshed = true;
+    setTimeout(() => {
+      try {
+        refreshNodes();
+      } catch (e) {
+        console.error("Auto node-list refresh failed:", e);
+      }
+    }, 0);
+  }
 }
 
 function pingNode(nid) {
@@ -968,21 +1412,35 @@ function grantKeys(accept) {
 }
 
 function acceptDSK(accept) {
-  if (accept) {
-    wsSend("accept_dsk", { dsk: currentDSK });
-    showToast("DSK accepted");
-  } else {
+  document.getElementById("dskDialog").style.display = "none";
+  if (!accept) {
     showToast("DSK rejected - aborting inclusion");
     wsSend("abort_add");
     addMode = false;
     updateModeButtons();
+    return;
   }
-  document.getElementById("dskDialog").style.display = "none";
+  // ZPC verifies the node by comparing against the first 5 DSK digits the
+  // user types off the physical device (Network/DSK/Accept, "dsk" is a
+  // 0..0xffff value sent as a string).
+  const entered = document.getElementById("dskPrefixInput").value.trim();
+  if (!/^\d{5}$/.test(entered)) {
+    showToast("Enter exactly the 5 digits shown on the device");
+    document.getElementById("dskDialog").style.display = "block";
+    return;
+  }
+  if (parseInt(entered, 10) > 0xffff) {
+    showToast("Invalid DSK prefix: must be 00000-65535");
+    document.getElementById("dskDialog").style.display = "block";
+    return;
+  }
+  wsSend("accept_dsk", { dsk: entered });
+  showToast("DSK accepted");
 }
 
 function switchTab(name) {
   document.querySelectorAll(".tab-btn").forEach((b, i) => {
-    b.classList.toggle("active", ["nodes", "smartstart", "setup"][i] === name);
+    b.classList.toggle("active", ["nodes", "smartstart", "ota", "setup"][i] === name);
   });
   document.querySelectorAll(".tab-panel").forEach(p => {
     p.classList.toggle("active", p.id === `tab-${name}`);
@@ -1119,6 +1577,257 @@ function factoryReset() {
   }
   wsSend("factory_reset");
   showToast("Factory reset initiated...");
+}
+
+// Node Properties Modal
+function showProps(nid) {
+  modalNodeId = nid;
+  const existing = nodeProperties[nid];
+  document.getElementById("propsModal").classList.add("active");
+  document.getElementById("propsNodeId").textContent = nid;
+  document.getElementById("propsNlsResult").textContent = "";
+  if (existing) {
+    renderPropsModal(existing);
+  } else {
+    document.getElementById("propsProtocol").textContent = "Loading...";
+    wsSend("node_properties", { node_id: nid });
+  }
+}
+
+function closePropsModal() {
+  document.getElementById("propsModal").classList.remove("active");
+  modalNodeId = null;
+}
+
+function renderPropsModal(props) {
+  const proto = props.inclusion_protocol === 1 ? "Z-Wave Long Range" : props.inclusion_protocol === 0 ? "Z-Wave" : "--";
+  document.getElementById("propsProtocol").textContent = proto;
+  document.getElementById("propsKeys").textContent = props.granted_keys !== null && props.granted_keys !== undefined ? "0x" + props.granted_keys.toString(16).toUpperCase() : "--";
+  document.getElementById("propsS2Cap").textContent = props.s2_capability ? "Yes" : "No";
+  document.getElementById("propsRssi").textContent = props.last_rx_rssi !== null && props.last_rx_rssi !== undefined ? props.last_rx_rssi + " dBm" : "--";
+  document.getElementById("propsTxPower").textContent = props.last_tx_power !== null && props.last_tx_power !== undefined ? props.last_tx_power + " dBm" : "--";
+  document.getElementById("propsRepeaters").textContent = props.last_number_of_repeaters !== null && props.last_number_of_repeaters !== undefined ? props.last_number_of_repeaters : "--";
+  document.getElementById("propsRoute").textContent = props.last_routing_path ? props.last_routing_path.join(" → ") : "--";
+  if (props.last_rx_tx_timestamp) {
+    document.getElementById("propsLastActivity").textContent = new Date(props.last_rx_tx_timestamp * 1000).toLocaleString();
+  } else {
+    document.getElementById("propsLastActivity").textContent = "--";
+  }
+}
+
+function nlsEnableFromModal() {
+  if (modalNodeId) {
+    wsSend("nls_enable", { node_id: modalNodeId });
+  }
+}
+
+function nlsStateFromModal() {
+  if (modalNodeId) {
+    document.getElementById("propsNlsResult").textContent = "Querying...";
+    wsSend("nls_state", { node_id: modalNodeId });
+  }
+}
+
+// OTA Functions
+function otaUploadFile() {
+  const fileInput = document.getElementById("otaFileInput");
+  const statusEl = document.getElementById("otaUploadStatus");
+  const file = fileInput.files[0];
+  if (!file) {
+    statusEl.textContent = "Select a .gbl file";
+    statusEl.style.color = "var(--yellow)";
+    return;
+  }
+  if (!file.name.endsWith(".gbl")) {
+    statusEl.textContent = "Only .gbl files are supported";
+    statusEl.style.color = "var(--red)";
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    statusEl.textContent = "File too large (max 10 MB)";
+    statusEl.style.color = "var(--red)";
+    return;
+  }
+  statusEl.textContent = "Reading file...";
+  statusEl.style.color = "var(--muted)";
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const bytes = new Uint8Array(e.target.result);
+    const data = Array.from(bytes);
+    statusEl.textContent = `Uploading ${file.name} (${(file.size / 1024).toFixed(1)} KB)...`;
+    statusEl.style.color = "var(--yellow)";
+    wsSend("ota_upload_image", { image_name: file.name, data });
+  };
+  reader.onerror = () => {
+    statusEl.textContent = "Failed to read file";
+    statusEl.style.color = "var(--red)";
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function otaListImages() {
+  wsSend("ota_list_images");
+}
+
+function renderOtaImages() {
+  const wrap = document.getElementById("otaImageList");
+  const select = document.getElementById("otaImageSelect");
+  if (!otaImages.length) {
+    wrap.innerHTML = '<div class="empty-state">No cached images.</div>';
+    select.innerHTML = '<option value="">(upload an image first)</option>';
+    return;
+  }
+  let html = "";
+  for (const img of otaImages) {
+    const name = img.name || img;
+    const size = img.size !== undefined ? formatBytes(img.size) : "--";
+    html += `<div class="ota-file-row">
+      <span class="ota-file-name">${name}</span>
+      <span class="ota-file-size">${size}</span>
+      <button class="danger" style="padding:4px 8px; font-size:0.7rem;" onclick="otaRemoveImage('${name}')">Remove</button>
+    </div>`;
+  }
+  wrap.innerHTML = html;
+  select.innerHTML = otaImages.map(img => {
+    const name = img.name || img;
+    return `<option value="${name}">${name}</option>`;
+  }).join("");
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function otaRemoveImage(name) {
+  wsSend("ota_remove_image", { image_name: name });
+  showToast(`Removing ${name}...`);
+}
+
+// Rebuilds the OTA "Node ID" drop-down from the commissioned nodes,
+// preserving the current selection when it still exists.
+function renderOtaNodeSelect() {
+  const select = document.getElementById("otaNodeId");
+  if (!select) return;
+  const selected = select.value;
+  const nodes = nodeData
+    .map(n => (n.node_information || {}).node_id)
+    .filter(v => v !== undefined && v !== null)
+    .sort((a, b) => a - b);
+  let html = "";
+  if (!nodes.length) {
+    html = '<option value="">(no nodes commissioned)</option>';
+  } else {
+    for (const nid of nodes) {
+      html += `<option value="${nid}">${nid}</option>`;
+    }
+  }
+  select.innerHTML = html;
+  if (nodes.includes(Number(selected))) {
+    select.value = selected;
+  }
+}
+
+function otaStartUpload() {
+  const nid = parseInt(document.getElementById("otaNodeId").value);
+  const imageName = document.getElementById("otaImageSelect").value;
+  if (!nid || nid < 1) {
+    showToast("Select a target node");
+    return;
+  }
+  if (!imageName) {
+    showToast("Select an image");
+    return;
+  }
+  wsSend("ota_start_upload", { node_id: nid, image_name: imageName, wait_for_activation: false });
+  showToast(`Starting OTA for node ${nid}...`);
+}
+
+// ZPC only publishes progress snapshots on request (OTA/Progress), so poll
+// every 5 seconds while a transfer is in flight and stop once a terminal
+// status arrives.
+function startOtaProgressPolling() {
+  stopOtaProgressPolling();
+  otaProgressTimer = setInterval(() => {
+    if (!otaProgressState || !otaProgressState.node_id) {
+      stopOtaProgressPolling();
+      return;
+    }
+    otaProgress();
+  }, 5000);
+}
+
+function stopOtaProgressPolling() {
+  if (otaProgressTimer) {
+    clearInterval(otaProgressTimer);
+    otaProgressTimer = null;
+  }
+}
+
+// Terminal OTA statuses per the ZPC OTA API (ota.md): once one of these
+// arrives the transfer is over and auto-refresh should stop.
+const OTA_TERMINAL_STATUSES = [
+  "success", "failed", "aborted", "waiting_for_activation", "stored_no_restart",
+];
+
+// Raw firmware status bytes from the Z-Wave spec (SDS13782, Table 3.93),
+// sent by ZPC as `status_code` (decimal) when status is "failed".
+const OTA_STATUS_CODES = {
+  0x00: "checksum error",
+  0x01: "unable to receive",
+  0x02: "manufacturer ID mismatch",
+  0x03: "firmware ID mismatch",
+  0x04: "firmware target mismatch",
+  0x05: "invalid file header info",
+  0x06: "invalid file header format",
+  0x07: "insufficient memory",
+  0x08: "hardware version mismatch",
+};
+
+function otaStatusText(status, statusCode) {
+  if (status === "failed" && statusCode !== undefined && statusCode !== null) {
+    const desc = OTA_STATUS_CODES[statusCode] ||
+      `code 0x${statusCode.toString(16).toUpperCase().padStart(2, "0")}`;
+    return `failed (${desc})`;
+  }
+  return status;
+}
+
+function otaProgress() {
+  wsSend("ota_progress");
+}
+
+function otaAbort() {
+  if (otaProgressState && otaProgressState.node_id) {
+    wsSend("ota_abort", { node_id: otaProgressState.node_id });
+    stopOtaProgressPolling();
+    otaAwaitingActivation = null;
+    showToast("Aborting OTA...");
+  }
+}
+
+function otaActivate() {
+  if (otaProgressState && otaProgressState.node_id) {
+    // ZPC publishes nothing on successful activation — the node reboots and is
+    // re-interviewed. Track it so the interview handler can report completion.
+    otaAwaitingActivation = { node_id: otaProgressState.node_id };
+    wsSend("ota_activate", { node_id: otaProgressState.node_id });
+    showToast("Activating firmware...");
+    document.getElementById("otaActivateBtn").style.display = "none";
+    document.getElementById("otaProgressStatus").textContent = "Activating...";
+  }
+}
+
+function closeOtaProgress() {
+  stopOtaProgressPolling();
+  otaProgressState = null;
+  otaAwaitingActivation = null;
+  document.getElementById("otaProgressCard").style.display = "none";
+  document.getElementById("otaAbortBtn").style.display = "";
+  document.getElementById("otaActivateBtn").style.display = "none";
 }
 
 // Start

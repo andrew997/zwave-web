@@ -49,6 +49,7 @@ MQTT_HOST = config["mqtt_host"]
 MQTT_PORT = config["mqtt_port"]
 display_hostname = resolve_display_hostname(MQTT_HOST)
 
+state_lock = threading.Lock()
 connected_clients = set()
 home_id = None
 node_status = {}
@@ -136,8 +137,8 @@ def on_mqtt_message(client, userdata, msg):
                 home_id = data["home_id"]
                 logger.info(f"Discovered home_id: {home_id}")
 
-        # Factory reset report — new home_id, clear all state
-        if topic.endswith("Network/FactoryReset/Report"):
+        # Factory reset report — global topic (no home_id segment), clear all state
+        if topic == "zpc/Network/FactoryReset/Report":
             if isinstance(data, dict):
                 old_home = home_id
                 home_id = data.get("home_id")
@@ -276,6 +277,12 @@ async def serve_file(connection, filepath):
         Headers([
             ("content-type", content_type),
             ("content-length", str(len(body))),
+            # No cache-control headers => the browser heuristically caches the page
+            # and keeps serving a stale copy after code changes. Force revalidation
+            # so edits (e.g. the hostname in the title) show up on reload.
+            ("cache-control", "no-cache, no-store, must-revalidate"),
+            ("pragma", "no-cache"),
+            ("expires", "0"),
         ]),
         body,
     )
@@ -480,6 +487,108 @@ async def ws_handler(websocket):
                     mqtt_client.publish(
                         f"zpc/{hid}/{nid:04X}/ep0/Basic/Command/BasicSet",
                         json.dumps({"value": value}),
+                    )
+
+            # Node Properties
+            elif action == "node_properties":
+                nid = data.get("node_id")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and nid is not None:
+                    mqtt_client.publish(
+                        f"zpc/{hid}/Network/Node/Properties",
+                        json.dumps({"node_id": nid}),
+                    )
+
+            # NLS
+            elif action == "nls_enable":
+                nid = data.get("node_id")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and nid is not None:
+                    mqtt_client.publish(
+                        f"zpc/{hid}/Network/NLS/Enable",
+                        json.dumps({"node_id": nid}),
+                    )
+
+            elif action == "nls_state":
+                nid = data.get("node_id")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and nid is not None:
+                    mqtt_client.publish(
+                        f"zpc/{hid}/Network/NLS/State",
+                        json.dumps({"node_id": nid}),
+                    )
+
+            # OTA
+            elif action == "ota_upload_image":
+                image_name = data.get("image_name", "")
+                image_data = data.get("data", [])
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and image_name:
+                    mqtt_client.publish(
+                        f"zpc/{hid}/OTA/UploadImage",
+                        json.dumps({"image_name": image_name, "data": image_data}),
+                    )
+
+            elif action == "ota_list_images":
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/OTA/ListImages", "{}")
+
+            elif action == "ota_remove_image":
+                image_name = data.get("image_name", "")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and image_name:
+                    mqtt_client.publish(
+                        f"zpc/{hid}/OTA/RemoveImage",
+                        json.dumps({"image_name": image_name}),
+                    )
+
+            elif action == "ota_start_upload":
+                nid = data.get("node_id")
+                image_name = data.get("image_name", "")
+                wait_for_activation = data.get("wait_for_activation", False)
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and nid is not None and image_name:
+                    mqtt_client.publish(
+                        f"zpc/{hid}/OTA/StartFirmwareUpload",
+                        json.dumps({
+                            "node_id": nid,
+                            "image_name": image_name,
+                            "wait_for_activation": wait_for_activation,
+                        }),
+                    )
+
+            elif action == "ota_progress":
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid:
+                    mqtt_client.publish(f"zpc/{hid}/OTA/Progress", "{}")
+
+            elif action == "ota_abort":
+                nid = data.get("node_id")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and nid is not None:
+                    mqtt_client.publish(
+                        f"zpc/{hid}/OTA/Abort",
+                        json.dumps({"node_id": nid}),
+                    )
+
+            elif action == "ota_activate":
+                nid = data.get("node_id")
+                with state_lock:
+                    hid = home_id
+                if mqtt_client and hid and nid is not None:
+                    mqtt_client.publish(
+                        f"zpc/{hid}/OTA/Activate",
+                        json.dumps({"node_id": nid}),
                     )
 
     except websockets.ConnectionClosed:
